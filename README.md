@@ -60,6 +60,18 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Project structure
+
+```text
+vital-key-chain/
+├── src/                # frontend source
+├── server/             # Python backend service
+│   ├── src/            # backend source
+│   ├── requirements.txt
+│   └── README.md
+└── public/
+```
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
