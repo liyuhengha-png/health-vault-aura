@@ -332,93 +332,6 @@ const normalizeParseResponse = (payload: unknown, fallbackFileName: string): Par
   };
 };
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const normalizeExtractedText = (value: string) =>
-  value
-    .replace(/\u3000/g, " ")
-    .replace(/：/g, ":")
-    .replace(/（/g, "(")
-    .replace(/）/g, ")")
-    .replace(/[ \t]+/g, " ");
-
-const parseLocalIndicators = (text: string): ParsedIndicator[] => {
-  const normalized = normalizeExtractedText(text);
-  const indicators: ParsedIndicator[] = [];
-
-  for (const field of manualFields) {
-    const label = escapeRegExp(field.name);
-    const pattern = new RegExp(`${label}\\s*:?\\s*([-−]?\\d+(?:\\.\\d+)?|阴性|阳性|negative|positive|\\+{1,3}|-{1,2})`, "i");
-    const match = normalized.match(pattern);
-    if (!match?.[1]) continue;
-
-    const value = match[1].replace("−", "-").trim();
-    indicators.push({
-      id: field.id,
-      name: field.name,
-      category: field.category,
-      value,
-      unit: field.unit,
-      referenceRange: field.ref || "",
-      status: checkStatus(value, field.ref || ""),
-      instrument: "Local Heuristic",
-    });
-  }
-
-  if (indicators.length > 0) {
-    return indicators;
-  }
-
-  // Generic fallback: attempt to capture "name + numeric/qualitative value" pairs.
-  const genericPattern = /([A-Za-z\u4e00-\u9fa5()\-/]{2,40})\s*:?\s*([-−]?\d+(?:\.\d+)?|阴性|阳性|negative|positive)/gi;
-  const seen = new Set<string>();
-  let match: RegExpExecArray | null = genericPattern.exec(normalized);
-
-  while (match && indicators.length < 20) {
-    const name = (match[1] || "").trim();
-    const value = (match[2] || "").replace("−", "-").trim();
-    if (name.length < 2 || seen.has(`${name}:${value}`)) {
-      match = genericPattern.exec(normalized);
-      continue;
-    }
-
-    seen.add(`${name}:${value}`);
-    indicators.push({
-      id: slugify(name),
-      name,
-      category: "Lab Results",
-      value,
-      unit: "",
-      referenceRange: "",
-      status: "",
-      instrument: "Local Heuristic",
-    });
-
-    match = genericPattern.exec(normalized);
-  }
-
-  return indicators;
-};
-
-const buildLocalParseResponse = (fullText: string, fileName: string, pageCount: number): ParseResponse => {
-  const indicators = parseLocalIndicators(fullText);
-  return {
-    fileName,
-    contentType: "application/pdf",
-    indicatorCount: indicators.length,
-    indicators,
-    meta: {
-      model: "local-heuristic-parser",
-      char_count: fullText.length,
-      chunk_count: 1,
-      page_count: pageCount,
-      filename: fileName,
-      max_file_size_mb: 20,
-      ark_base_url: "frontend-local",
-    },
-  };
-};
-
 const downloadParsedJson = (data: ParseResponse) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -590,12 +503,12 @@ export default function HealthDataUpload() {
       // Safeguard against insanely large extraction
       const textChunk = fullText.slice(0, 30000);
 
-      // 2. Guaranteed path: local heuristic parse first (always works in Lovable/browser).
-      let data = buildLocalParseResponse(fullText, file.name, pdf.numPages);
+      // 2. Pure frontend API call: browser -> AI endpoint.
+      if (!aiApiKey) {
+        throw new Error("Missing VITE_AI_API_KEY. Please configure frontend environment variables for direct API parsing.");
+      }
 
-      // 3. Optional enhancement: if API key exists, attempt AI parse and overwrite local result on success.
-      if (aiApiKey) {
-        const prompt = `Strictly output in the following JSON format without any additional explanation:
+      const prompt = `Strictly output in the following JSON format without any additional explanation:
 
 {
   "fileName": "${file.name}",
@@ -627,42 +540,41 @@ Requirements:
 PDF content:
 ${textChunk}`;
 
-        try {
-          const aiResponse = await fetchWithTimeout(`${aiBaseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${aiApiKey}`,
-            },
-            body: JSON.stringify({
-              model: aiModel,
-              messages: [{ role: "user", content: prompt }],
-              temperature: 0,
-            }),
-          }, aiRequestTimeoutMs);
+      const aiResponse = await fetchWithTimeout(`${aiBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${aiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: aiModel,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0,
+        }),
+      }, aiRequestTimeoutMs);
 
-          if (aiResponse.ok) {
-            const aiPayload = await aiResponse.json();
-            const responseText = aiPayload?.choices?.[0]?.message?.content;
-            if (typeof responseText === "string" && responseText.trim()) {
-              const aiParsed = normalizeParseResponse(extractResponsePayload(responseText), file.name);
-              aiParsed.meta = {
-                ...aiParsed.meta,
-                model: aiModel,
-                char_count: fullText.length,
-                chunk_count: 1,
-                page_count: pdf.numPages,
-                filename: file.name,
-                max_file_size_mb: 20,
-                ark_base_url: aiBaseUrl,
-              };
-              data = aiParsed;
-            }
-          }
-        } catch {
-          // Keep local result when AI call fails to guarantee upload flow completion.
-        }
+      if (!aiResponse.ok) {
+        const responseBody = await aiResponse.text();
+        throw new Error(`AI API failed with status ${aiResponse.status}: ${responseBody || "No response body"}`);
       }
+
+      const aiPayload = await aiResponse.json();
+      const responseText = aiPayload?.choices?.[0]?.message?.content;
+      if (typeof responseText !== "string" || !responseText.trim()) {
+        throw new Error("AI API returned empty content.");
+      }
+
+      const data = normalizeParseResponse(extractResponsePayload(responseText), file.name);
+      data.meta = {
+        ...data.meta,
+        model: aiModel,
+        char_count: fullText.length,
+        chunk_count: 1,
+        page_count: pdf.numPages,
+        filename: file.name,
+        max_file_size_mb: 20,
+        ark_base_url: aiBaseUrl,
+      };
 
       setParsedData(data);
       setUploadHistory((current) => [
@@ -677,7 +589,7 @@ ${textChunk}`;
 
       toast({
         title: "Report parsed",
-        description: `${data.fileName} is ready for review with ${data.indicatorCount} extracted results.${data.meta.model === "local-heuristic-parser" ? " (Local parser mode)" : ""}`,
+        description: `${data.fileName} is ready for review with ${data.indicatorCount} extracted results.`,
       });
     } catch (error) {
       setParsedData(null);
