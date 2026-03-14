@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import OpenAI from "openai";
 import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
 import {
   AlertCircle,
   ArrowRight,
@@ -28,8 +29,8 @@ import {
   Upload,
 } from "lucide-react";
 
-// Configure pdfjs worker to use CDN for best static hosting compatibility (like Lovable)
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Configure pdfjs worker to use the local bundled version
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 type ParsedIndicator = {
   id: string;
