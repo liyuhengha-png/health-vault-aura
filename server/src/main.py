@@ -114,6 +114,10 @@ if os.path.exists(dist_dir):
     # Catch-all route to serve the SPA index.html for React Router
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
+        # Do not serve index.html for API routes, let them return standard 404s or error JSONs
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API route not found")
+            
         file_path = os.path.join(dist_dir, full_path)
         # Serve exact file if it exists and is not a directory
         if os.path.exists(file_path) and os.path.isfile(file_path):
