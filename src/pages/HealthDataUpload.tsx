@@ -501,9 +501,10 @@ export default function HealthDataUpload() {
       const textChunk = fullText.slice(0, 30000);
 
       // 2. Call OpenAI directly from the frontend
-      const apiKey = import.meta.env.VITE_ARK_API_KEY;
-      const baseURL = import.meta.env.VITE_ARK_BASE_URL || "https://api.tu-zi.com/v1";
-      const model = import.meta.env.VITE_ARK_MODEL || "doubao-seed-1-6-flash-250828";
+      // Hardcoded values since Lovable does not support environment variable injection
+      const apiKey = "sk-Bf9NCQVUD7Xs06sYydD3kVIE1smjH6JZZ2LF0J1MuKeRITKC";
+      const baseURL = "https://api.tu-zi.com/v1";
+      const model = "doubao-seed-1-6-flash-250828";
 
       if (!apiKey) {
         throw new Error("Missing API Key. Please configure VITE_ARK_API_KEY in your Lovable environment variables.");
