@@ -7,9 +7,6 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import OpenAI from "openai";
-import * as pdfjsLib from "pdfjs-dist";
-import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
 import {
   AlertCircle,
   ArrowRight,
@@ -28,9 +25,6 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-
-// Configure pdfjs worker to use the local bundled version
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 type ParsedIndicator = {
   id: string;
@@ -481,71 +475,20 @@ export default function HealthDataUpload() {
     setSelectedFileName(file.name);
 
     try {
-      // 1. Extract text locally from PDF
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-      
-      let fullText = "";
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        // @ts-ignore
-        const pageText = textContent.items.map(item => item.str).join(" ");
-        fullText += pageText + "\n";
-      }
+      const formData = new FormData();
+      formData.append("file", file);
 
-      if (!fullText.trim()) {
-        throw new Error("Could not extract text from this PDF. Ensure it is a text-based report, not just scanned images.");
-      }
-
-      // Safeguard against insanely large extraction
-      const textChunk = fullText.slice(0, 30000);
-
-      // 2. Send extracted text to our Supabase Edge Function to bypass CORS
-      // We use the proxy or direct URL for Supabase Edge Functions. 
-      // Lovable automatically configures VITE_SUPABASE_URL in deployed environments.
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-      
-      const functionUrl = `${supabaseUrl}/functions/v1/parse-health-report`;
-
-      const aiResponse = await fetch(functionUrl, {
+      const response = await fetch(buildApiUrl("/api/health/parse"), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${supabaseAnonKey}`,
-        },
-        body: JSON.stringify({
-          textChunk,
-          fileName: file.name
-        })
+        body: formData,
       });
 
-      if (!aiResponse.ok) {
-        let errMessage = `Edge function failed with status ${aiResponse.status}`;
-        try {
-          const errData = await aiResponse.json();
-          errMessage = errData.error || errMessage;
-        } catch {
-           // fallback to status text if non-JSON error
-        }
-        throw new Error(errMessage);
+      if (!response.ok) {
+        throw new Error(await formatApiError(response));
       }
 
-      const { responseText, model, baseURL } = await aiResponse.json();
-
-      const data = normalizeParseResponse(extractResponsePayload(responseText), file.name);
-      
-      // Patch meta to reflect the proxy parse
-      data.meta = {
-        model: model || "unknown",
-        char_count: fullText.length,
-        chunk_count: 1,
-        page_count: pdf.numPages,
-        filename: file.name,
-        max_file_size_mb: 20,
-        ark_base_url: baseURL || "proxy"
-      };
+      const payload = await response.json();
+      const data = normalizeParseResponse(payload, file.name);
 
       setParsedData(data);
       setUploadHistory((current) => [
