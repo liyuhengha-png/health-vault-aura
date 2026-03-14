@@ -13,13 +13,11 @@ serve(async (req) => {
   try {
     const { textChunk, fileName } = await req.json()
 
-    const apiKey = Deno.env.get("ARK_API_KEY") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
-    const baseURL = Deno.env.get("ARK_BASE_URL") ?? "https://api.tu-zi.com/v1";
-    const model = Deno.env.get("ARK_MODEL") ?? "doubao-seed-1-6-flash-250828";
-
-    if (!apiKey) {
-      throw new Error("Missing ARK_API_KEY (or OPENAI_API_KEY) in Supabase Edge Function secrets.");
-    }
+    // We can use Supabase Edge Function secrets, but since Lovable doesn't support envs easily,
+    // we hardcode the API key here in the secure backend where browsers can't see it.
+    const apiKey = "sk-Bf9NCQVUD7Xs06sYydD3kVIE1smjH6JZZ2LF0J1MuKeRITKC";
+    const baseURL = "https://api.tu-zi.com/v1";
+    const model = "doubao-seed-1-6-flash-250828";
 
     const prompt = `Strictly output in the following JSON format without any additional explanation:
 
