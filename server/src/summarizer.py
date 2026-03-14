@@ -60,12 +60,31 @@ def chunk_text(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list[str]:
     current: list[str] = []
     current_len = 0
 
-    for paragraph in text.split("\n\n"):
+    # Split by double newline first
+    paragraphs = text.split("\n\n")
+    # If there are very few double newlines, fallback to single newline
+    if len(paragraphs) < 3 and len(text) > max_chars:
+        paragraphs = text.split("\n")
+
+    for paragraph in paragraphs:
         p = paragraph.strip()
         if not p:
             continue
 
         p_len = len(p) + 2
+        
+        # If a single paragraph is too large, we must forcefully split it
+        if p_len > max_chars:
+            if current:
+                chunks.append("\n\n".join(current))
+                current = []
+                current_len = 0
+            
+            # Sub-chunk the massive paragraph
+            for i in range(0, len(p), max_chars):
+                chunks.append(p[i:i+max_chars])
+            continue
+
         if current and current_len + p_len > max_chars:
             chunks.append("\n\n".join(current))
             current = [p]
@@ -238,8 +257,10 @@ def summarize_pdf_text(client: OpenAI, text: str, filename: str = "unknown.pdf")
             if isinstance(indicators, list):
                 typed = cast(list[dict[str, object]], indicators)
                 all_indicators.extend(typed)
-        except ValueError:
-            # Skip failed chunk without affecting other chunks
+        except ValueError as e:
+            # Print the error and response for server logs to help debugging
+            print(f"Skipping chunk due to JSON parse error: {e}")
+            print(f"Truncated AI response: {response_text[:200]}...")
             continue
 
     return normalize_parse_result(

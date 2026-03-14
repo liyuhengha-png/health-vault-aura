@@ -13,7 +13,9 @@ def build_ark_client() -> OpenAI:
     api_key = os.getenv("ARK_API_KEY")
     if not api_key:
         raise ValueError("ARK_API_KEY is not set. Please configure it in server/.env.")
-    base_url = os.getenv("ARK_BASE_URL", "https://api.tu-zi.com/v1")
+    base_url = os.getenv("ARK_BASE_URL")
+    if not base_url or not base_url.strip():
+        base_url = "https://api.tu-zi.com/v1"
     return OpenAI(base_url=base_url, api_key=api_key)
 
 
