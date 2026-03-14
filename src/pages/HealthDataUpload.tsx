@@ -7,7 +7,6 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import OpenAI from "openai";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
 import {
@@ -183,9 +182,17 @@ const recentUploadPlaceholders = [
   { name: "Annual_Checkup_Feb2025.pdf", date: "Feb 20, 2025", records: 9 },
 ];
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+const trimTrailingSlash = (url: string) => url.replace(/\/+$/, "");
 
-const buildApiUrl = (path: string) => `${apiBaseUrl}${path}`;
+const resolveParseFunctionUrl = () => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+  if (supabaseUrl) {
+    return `${trimTrailingSlash(supabaseUrl)}/functions/v1/parse-health-report`;
+  }
+
+  // In hosted Lovable deployments, same-origin rewrites can route /functions/*.
+  return "/functions/v1/parse-health-report";
+};
 
 const formatStatus = (status: string) => (status ? status.toUpperCase() : "UNKNOWN");
 
@@ -329,19 +336,6 @@ const normalizeParseResponse = (payload: unknown, fallbackFileName: string): Par
       ark_base_url: readString(metaRecord, ["ark_base_url", "arkBaseUrl"]),
     },
   };
-};
-
-const formatApiError = async (response: Response) => {
-  try {
-    const data = (await response.json()) as { detail?: string };
-    if (data.detail) {
-      return data.detail;
-    }
-  } catch {
-    // Ignore JSON parsing errors and fall back to status text.
-  }
-
-  return `Upload failed with status ${response.status}`;
 };
 
 const downloadParsedJson = (data: ParseResponse) => {
@@ -501,20 +495,21 @@ export default function HealthDataUpload() {
       // Safeguard against insanely large extraction
       const textChunk = fullText.slice(0, 30000);
 
-      // 2. Send extracted text to our Supabase Edge Function to bypass CORS
-      // We use the proxy or direct URL for Supabase Edge Functions. 
-      // Lovable automatically configures VITE_SUPABASE_URL in deployed environments.
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-      
-      const functionUrl = `${supabaseUrl}/functions/v1/parse-health-report`;
+      // 2. Send extracted text to Supabase Edge Function.
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || "";
+      const functionUrl = resolveParseFunctionUrl();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (supabaseAnonKey) {
+        headers.Authorization = `Bearer ${supabaseAnonKey}`;
+        headers.apikey = supabaseAnonKey;
+      }
 
       const aiResponse = await fetch(functionUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${supabaseAnonKey}`,
-        },
+        headers,
         body: JSON.stringify({
           textChunk,
           fileName: file.name
@@ -532,7 +527,10 @@ export default function HealthDataUpload() {
         throw new Error(errMessage);
       }
 
-      const { responseText, model, baseURL } = await aiResponse.json();
+      const { responseText, model, baseURL, error } = await aiResponse.json();
+      if (error) {
+        throw new Error(error);
+      }
 
       const data = normalizeParseResponse(extractResponsePayload(responseText), file.name);
       
@@ -564,9 +562,18 @@ export default function HealthDataUpload() {
       });
     } catch (error) {
       setParsedData(null);
+
+      let errorMessage = "Unable to parse the selected file.";
+      if (error instanceof TypeError) {
+        errorMessage =
+          "Network request failed. In Lovable, configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, or ensure /functions/v1/parse-health-report is routed to Supabase.";
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
       toast({
         title: "Upload failed",
-        description: error instanceof Error ? error.message : "Unable to parse the selected file.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
