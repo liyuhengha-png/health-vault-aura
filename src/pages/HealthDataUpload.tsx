@@ -501,72 +501,50 @@ export default function HealthDataUpload() {
       // Safeguard against insanely large extraction
       const textChunk = fullText.slice(0, 30000);
 
-      // 2. Call OpenAI directly from the frontend
-      // Hardcoded values since Lovable does not support environment variable injection
-      const apiKey = "sk-Bf9NCQVUD7Xs06sYydD3kVIE1smjH6JZZ2LF0J1MuKeRITKC";
-      const baseURL = "https://api.tu-zi.com/v1";
-      const model = "doubao-seed-1-6-flash-250828";
+      // 2. Send extracted text to our Supabase Edge Function to bypass CORS
+      // We use the proxy or direct URL for Supabase Edge Functions. 
+      // Lovable automatically configures VITE_SUPABASE_URL in deployed environments.
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+      
+      const functionUrl = `${supabaseUrl}/functions/v1/parse-health-report`;
 
-      if (!apiKey) {
-        throw new Error("Missing API Key. Please configure VITE_ARK_API_KEY in your Lovable environment variables.");
+      const aiResponse = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          textChunk,
+          fileName: file.name
+        })
+      });
+
+      if (!aiResponse.ok) {
+        let errMessage = `Edge function failed with status ${aiResponse.status}`;
+        try {
+          const errData = await aiResponse.json();
+          errMessage = errData.error || errMessage;
+        } catch {
+           // fallback to status text if non-JSON error
+        }
+        throw new Error(errMessage);
       }
 
-      const openai = new OpenAI({
-         apiKey,
-         baseURL,
-         dangerouslyAllowBrowser: true
-      });
+      const { responseText, model, baseURL } = await aiResponse.json();
 
-      const prompt = `Strictly output in the following JSON format without any additional explanation:
-
-{
-    "fileName": "${file.name}",
-    "contentType": "application/pdf",
-    "indicatorCount": <total number of indicators>,
-    "indicators": [
-        {
-            "id": "<indicator ID in lowercase English, e.g. hba1c>",
-            "name": "<indicator name, e.g. HbA1c>",
-            "category": "<category, e.g. Lab Results, Blood Test, Imaging, etc.>",
-            "value": "<value>",
-            "unit": "<unit>",
-            "referenceRange": "<reference range>",
-            "status": "<status: normal/high/low>",
-            "instrument": "<testing instrument or method>"
-        }
-    ]
-}
-
-Requirements:
-1. Extract all recognizable medical indicators (including blood tests, biochemical indicators, imaging results, etc.)
-2. indicatorCount must equal the length of the indicators array
-3. Use empty string "" for any missing fields
-4. Determine status by comparing value against reference range: normal/high/low. If comparison is impossible, use abnormal or "".
-5. Output JSON only, no other text
-6. For Chinese reports, keep the original indicator names but normalize status to English
-7. Prefer category values such as Lab Results, Imaging / Reports, Vitals, Conditions & Diagnoses
-8. Must output in English
-
-PDF content:
-${textChunk}`;
-
-      const completion = await openai.chat.completions.create({
-         model,
-         messages: [{ role: "user", content: prompt }]
-      });
-
-      const responseText = completion.choices[0]?.message?.content || "";
       const data = normalizeParseResponse(extractResponsePayload(responseText), file.name);
       
-      // Patch meta to reflect the frontend parse
+      // Patch meta to reflect the proxy parse
       data.meta = {
-        model,
+        model: model || "unknown",
         char_count: fullText.length,
         chunk_count: 1,
         page_count: pdf.numPages,
         filename: file.name,
         max_file_size_mb: 20,
-        ark_base_url: baseURL
+        ark_base_url: baseURL || "proxy"
       };
 
       setParsedData(data);
