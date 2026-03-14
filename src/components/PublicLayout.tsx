@@ -81,24 +81,39 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
             <div>
               <div className="text-xs font-semibold text-foreground mb-3 uppercase tracking-wider">Platform</div>
               <div className="space-y-2">
-                {["How it Works", "Privacy", "Security", "Roadmap"].map(l => (
-                  <div key={l} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer">{l}</div>
+                {[
+                  { label: "How it Works", href: "/how-it-works" },
+                  { label: "Privacy", href: "/privacy" },
+                  { label: "Security", href: "/security" },
+                  { label: "Roadmap", href: "/roadmap" },
+                ].map(l => (
+                  <Link key={l.href} to={l.href} className="block text-sm text-muted-foreground hover:text-foreground transition-colors">{l.label}</Link>
                 ))}
               </div>
             </div>
             <div>
               <div className="text-xs font-semibold text-foreground mb-3 uppercase tracking-wider">For Institutions</div>
               <div className="space-y-2">
-                {["Research Portal", "Pricing", "API Docs", "Compliance"].map(l => (
-                  <div key={l} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer">{l}</div>
+                {[
+                  { label: "Research Portal", href: "/research-portal" },
+                  { label: "Pricing", href: "/pricing" },
+                  { label: "API Docs", href: "/api-docs" },
+                  { label: "Compliance", href: "/compliance" },
+                ].map(l => (
+                  <Link key={l.href} to={l.href} className="block text-sm text-muted-foreground hover:text-foreground transition-colors">{l.label}</Link>
                 ))}
               </div>
             </div>
             <div>
               <div className="text-xs font-semibold text-foreground mb-3 uppercase tracking-wider">Legal</div>
               <div className="space-y-2">
-                {["Terms", "Privacy Policy", "HIPAA Notice", "Cookie Policy"].map(l => (
-                  <div key={l} className="text-sm text-muted-foreground hover:text-foreground cursor-pointer">{l}</div>
+                {[
+                  { label: "Terms", href: "/terms" },
+                  { label: "Privacy Policy", href: "/privacy-policy" },
+                  { label: "HIPAA Notice", href: "/hipaa-notice" },
+                  { label: "Cookie Policy", href: "/cookie-policy" },
+                ].map(l => (
+                  <Link key={l.href} to={l.href} className="block text-sm text-muted-foreground hover:text-foreground transition-colors">{l.label}</Link>
                 ))}
               </div>
             </div>

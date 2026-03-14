@@ -5,12 +5,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Activity, ArrowRight, Wallet, Loader2, AlertCircle } from "lucide-react";
 import { useWallet } from "@/hooks/use-wallet";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 export default function Login() {
   const navigate = useNavigate();
   const { connect, signMessage, isConnecting, isWalletAvailable, error } = useWallet();
+  const { login } = useAuth();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState("");
+
+  const handleEmailLogin = () => {
+    setFormError("");
+    if (!email.trim()) {
+      setFormError("Please enter your email.");
+      return;
+    }
+    if (!password.trim()) {
+      setFormError("Please enter your password.");
+      return;
+    }
+
+    const success = login(email, password);
+    if (success) {
+      toast.success("Login successful!");
+      navigate("/dashboard");
+    } else {
+      setFormError("Invalid email or password. Please try again or sign up first.");
+    }
+  };
 
   const handleWalletLogin = async () => {
     if (!isWalletAvailable) {
@@ -25,14 +50,12 @@ export default function Login() {
     setIsAuthenticating(true);
     
     try {
-      // Create a sign-in message with timestamp for security
       const timestamp = Date.now();
       const message = `HealthVault Sign In\n\nWallet: ${address}\nTimestamp: ${timestamp}\n\nBy signing this message, you confirm that you own this wallet address.`;
       
       const signature = await signMessage(message);
       
       if (signature) {
-        // Store auth info
         localStorage.setItem("auth_address", address);
         localStorage.setItem("auth_timestamp", timestamp.toString());
         localStorage.setItem("auth_signature", signature);
@@ -92,18 +115,40 @@ export default function Login() {
           <div className="space-y-4">
             <div>
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Email</Label>
-              <Input type="email" placeholder="you@example.com" className="h-11" />
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                className="h-11"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleEmailLogin()}
+              />
             </div>
             <div>
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Password</Label>
-              <Input type="password" placeholder="••••••••" className="h-11" />
+              <Input
+                type="password"
+                placeholder="••••••••"
+                className="h-11"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleEmailLogin()}
+              />
             </div>
 
-            <Link to="/dashboard">
-              <Button className="w-full h-11 bg-primary text-primary-foreground hover:opacity-90 shadow-teal gap-2 mt-2">
-                Sign In <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
+            {formError && (
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle className="w-4 h-4" />
+                {formError}
+              </div>
+            )}
+
+            <Button
+              className="w-full h-11 bg-primary text-primary-foreground hover:opacity-90 shadow-teal gap-2 mt-2"
+              onClick={handleEmailLogin}
+            >
+              Sign In <ArrowRight className="w-4 h-4" />
+            </Button>
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">

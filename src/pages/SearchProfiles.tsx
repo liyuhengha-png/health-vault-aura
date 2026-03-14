@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,7 @@ const filters = [
 export default function SearchProfiles() {
   const [search, setSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <AppLayout title="Search Profiles">
@@ -150,7 +152,11 @@ export default function SearchProfiles() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button size="sm" className="flex-1 gap-1.5 bg-primary text-primary-foreground hover:opacity-90">
+                <Button
+                  size="sm"
+                  className="flex-1 gap-1.5 bg-primary text-primary-foreground hover:opacity-90"
+                  onClick={() => navigate("/messages")}
+                >
                   <MessageSquare className="w-3 h-3" /> Request Message
                 </Button>
                 {profile.wearable && (
