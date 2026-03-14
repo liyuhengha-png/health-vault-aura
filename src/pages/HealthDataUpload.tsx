@@ -7,6 +7,8 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import OpenAI from "openai";
+import * as pdfjsLib from "pdfjs-dist";
 import {
   AlertCircle,
   ArrowRight,
@@ -25,6 +27,9 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
+
+// Configure pdfjs worker to use CDN for best static hosting compatibility (like Lovable)
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 type ParsedIndicator = {
   id: string;
@@ -475,20 +480,93 @@ export default function HealthDataUpload() {
     setSelectedFileName(file.name);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(buildApiUrl("/api/health/parse"), {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(await formatApiError(response));
+      // 1. Extract text locally from PDF
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+      
+      let fullText = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        // @ts-ignore
+        const pageText = textContent.items.map(item => item.str).join(" ");
+        fullText += pageText + "\n";
       }
 
-      const responseText = await response.text();
+      if (!fullText.trim()) {
+        throw new Error("Could not extract text from this PDF. Ensure it is a text-based report, not just scanned images.");
+      }
+
+      // Safeguard against insanely large extraction
+      const textChunk = fullText.slice(0, 30000);
+
+      // 2. Call OpenAI directly from the frontend
+      const apiKey = import.meta.env.VITE_ARK_API_KEY;
+      const baseURL = import.meta.env.VITE_ARK_BASE_URL || "https://api.tu-zi.com/v1";
+      const model = import.meta.env.VITE_ARK_MODEL || "doubao-seed-1-6-flash-250828";
+
+      if (!apiKey) {
+        throw new Error("Missing API Key. Please configure VITE_ARK_API_KEY in your Lovable environment variables.");
+      }
+
+      const openai = new OpenAI({
+         apiKey,
+         baseURL,
+         dangerouslyAllowBrowser: true
+      });
+
+      const prompt = `Strictly output in the following JSON format without any additional explanation:
+
+{
+    "fileName": "${file.name}",
+    "contentType": "application/pdf",
+    "indicatorCount": <total number of indicators>,
+    "indicators": [
+        {
+            "id": "<indicator ID in lowercase English, e.g. hba1c>",
+            "name": "<indicator name, e.g. HbA1c>",
+            "category": "<category, e.g. Lab Results, Blood Test, Imaging, etc.>",
+            "value": "<value>",
+            "unit": "<unit>",
+            "referenceRange": "<reference range>",
+            "status": "<status: normal/high/low>",
+            "instrument": "<testing instrument or method>"
+        }
+    ]
+}
+
+Requirements:
+1. Extract all recognizable medical indicators (including blood tests, biochemical indicators, imaging results, etc.)
+2. indicatorCount must equal the length of the indicators array
+3. Use empty string "" for any missing fields
+4. Determine status by comparing value against reference range: normal/high/low. If comparison is impossible, use abnormal or "".
+5. Output JSON only, no other text
+6. For Chinese reports, keep the original indicator names but normalize status to English
+7. Prefer category values such as Lab Results, Imaging / Reports, Vitals, Conditions & Diagnoses
+8. Must output in English
+
+PDF content:
+${textChunk}`;
+
+      const completion = await openai.chat.completions.create({
+         model,
+         messages: [{ role: "user", content: prompt }]
+      });
+
+      const responseText = completion.choices[0]?.message?.content || "";
       const data = normalizeParseResponse(extractResponsePayload(responseText), file.name);
+      
+      // Patch meta to reflect the frontend parse
+      data.meta = {
+        model,
+        char_count: fullText.length,
+        chunk_count: 1,
+        page_count: pdf.numPages,
+        filename: file.name,
+        max_file_size_mb: 20,
+        ark_base_url: baseURL
+      };
+
       setParsedData(data);
       setUploadHistory((current) => [
         {
