@@ -8,8 +8,8 @@ from openai import OpenAI
 
 from .ark_client import get_model_name, run_text_prompt
 
-MAX_CHARS_PER_CHUNK = 6000
-AI_TIMEOUT_SECONDS = 60
+MAX_CHARS_PER_CHUNK = 120000
+AI_TIMEOUT_SECONDS = 120
 DEFAULT_CATEGORY = "Lab Results"
 DEFAULT_CONTENT_TYPE = "application/pdf"
 STATUS_MAP = {
