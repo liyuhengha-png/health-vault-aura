@@ -186,6 +186,7 @@ const trimTrailingSlash = (url: string) => url.replace(/\/+$/, "");
 const aiBaseUrl = trimTrailingSlash(import.meta.env.VITE_AI_BASE_URL?.trim() || "https://api.tu-zi.com/v1");
 const aiModel = import.meta.env.VITE_AI_MODEL?.trim() || "doubao-seed-1-6-flash-250828";
 const aiApiKey = import.meta.env.VITE_AI_API_KEY?.trim() || "";
+const aiRequestTimeoutMs = Number(import.meta.env.VITE_AI_TIMEOUT_MS || 45000);
 
 const formatStatus = (status: string) => (status ? status.toUpperCase() : "UNKNOWN");
 
@@ -342,6 +343,20 @@ const downloadParsedJson = (data: ParseResponse) => {
   link.click();
 
   URL.revokeObjectURL(url);
+};
+
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 45000) => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort("timeout"), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 };
 
 export default function HealthDataUpload() {
@@ -525,7 +540,7 @@ Requirements:
 PDF content:
 ${textChunk}`;
 
-      const aiResponse = await fetch(`${aiBaseUrl}/chat/completions`, {
+      const aiResponse = await fetchWithTimeout(`${aiBaseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -536,7 +551,7 @@ ${textChunk}`;
           messages: [{ role: "user", content: prompt }],
           temperature: 0,
         }),
-      });
+      }, aiRequestTimeoutMs);
 
       if (!aiResponse.ok) {
         const responseBody = await aiResponse.text();
@@ -580,7 +595,9 @@ ${textChunk}`;
       setParsedData(null);
 
       let errorMessage = "Unable to parse the selected file.";
-      if (error instanceof TypeError) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        errorMessage = `AI request timed out after ${Math.round(aiRequestTimeoutMs / 1000)}s. Check network/CORS or increase VITE_AI_TIMEOUT_MS.`;
+      } else if (error instanceof TypeError) {
         errorMessage = "Network request failed. The target AI API may block browser CORS or be unreachable.";
       } else if (error instanceof Error) {
         errorMessage = error.message;
