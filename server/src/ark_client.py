@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import os
 from typing import Optional
+from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
-_ = load_dotenv()
+_SERVER_ENV = Path(__file__).resolve().parents[1] / ".env"
+_ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+
+# Load server/.env first for local backend runs, then root .env as a fallback.
+if _SERVER_ENV.exists():
+    _ = load_dotenv(dotenv_path=_SERVER_ENV)
+elif _ROOT_ENV.exists():
+    _ = load_dotenv(dotenv_path=_ROOT_ENV)
+else:
+    _ = load_dotenv()
 
 
 def build_ark_client() -> OpenAI:

@@ -28,3 +28,6 @@ server/src/__pycache__
 *.njsproj
 *.sln
 *.sw?
+
+# Local runtime artifacts
+.runtime/
