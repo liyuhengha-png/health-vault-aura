@@ -21,6 +21,7 @@ app = FastAPI(title="health parse endpoint")
 
 
 @app.post("/")
+@app.post("/api/health/parse")
 async def parse_health_file(file: UploadFile = File(...)) -> dict:
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename detected.")
